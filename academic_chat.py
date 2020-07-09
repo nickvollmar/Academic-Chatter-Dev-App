@@ -123,13 +123,13 @@ def main(env):
     # set search content
     # we prioritize tweets that have tagged our account directly (search 1)
     with open(direct_query_file) as f:
-        direct = [l.strip() for l in f.readlines()]
+        direct = ["(" + l.strip() + ")" for l in f.readlines()]
     query1 = " OR ".join(direct) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     # if we don't find tweets that included our tag then we search for general
     # hashtags (search 2)
     with open(indirect_query_file) as f:
-        indirect = [l.strip() for l in f.readlines()]
+        indirect = ["(" + l.strip() + ")" for l in f.readlines()]
     query2 = " OR ".join(indirect) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     search_loop(config, [query1, query2])
