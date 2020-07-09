@@ -89,6 +89,7 @@ def search_loop(config, query_list):
 
 
 def main(env):
+    twitter_handle = env["TWITTER_HANDLE"]
     twitter_secret_file = env.get("TWITTER_SECRET_FILE") or "config/secret.json"
     never_share_accounts_file = env.get("TWITTER_NEVER_SHARE_ACCOUNTS_FILE") or "config/never_share_accounts.txt"
     never_share_words_file = env.get("TWITTER_NEVER_SHARE_WORDS_FILE") or "config/never_share_words.txt"
@@ -123,13 +124,13 @@ def main(env):
     # we prioritize tweets that have tagged our account directly (search 1)
     with open(direct_query_file) as f:
         direct = [l.strip() for l in f.readlines()]
-    query1 = " OR ".join(direct) + " -filter:retweets AND -filter:replies"
+    query1 = " OR ".join(direct) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     # if we don't find tweets that included our tag then we search for general
     # hashtags (search 2)
     with open(indirect_query_file) as f:
         indirect = [l.strip() for l in f.readlines()]
-    query2 = " OR ".join(indirect) + " -filter:retweets AND -filter:replies"
+    query2 = " OR ".join(indirect) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     search_loop(config, [query1, query2])
 
