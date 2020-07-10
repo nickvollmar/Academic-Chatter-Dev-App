@@ -21,11 +21,25 @@ class Config:
         self.dryrun = dryrun
 
 
+class Queries:
+    def __init__(self, direct, indirect, popular):
+        self.direct = direct
+        self.indirect = indirect
+        self.popular = popular
+
+
 def search(config, query):
     return tweepy.Cursor(config.api.search,
                          q=query,
                          result_type="recent",
                          lang='en').items(1)
+
+
+def popular_search(config, query):
+    return tweepy.Cursor(config.api.search,
+                         q=query,
+                         result_type="popular",
+                         lang='en').items(10)
 
 
 def retweet(config, tweet):
@@ -35,13 +49,14 @@ def retweet(config, tweet):
         tweet.retweet()
 
 
-def try_search_and_retweet(config, query):
+def try_search_and_retweet(config, search_fn, query):
     """
     :param config: Config
+    :param search_fn: (config, query) -> list[Tweet]
     :param query: str -- Twitter query
     :return: bool: whether the search generated a successful retweet
     """
-    for tweet in search(config, query):
+    for tweet in search_fn(config, query):
         if tweet.user.screen_name in config.block_accounts:
             # don't share
             print("Avoiding spam user:", tweet.user.screen_name)
@@ -67,35 +82,36 @@ def try_search_and_retweet(config, query):
             return False
 
 
-def search_loop(config, query_list):
+def search_loop(config, queries):
     """
     :param config: Config
-    :param query_list: list[str] -- list of Twitter queries to try
+    :param queries: Queries
     :return: never returns
     """
-    print("query list:", query_list)
+    query_list = [
+        (search, queries.direct),
+        (popular_search, queries.popular),
+        (search, queries.indirect),
+    ]
     while True:
         successful_query_idx = None
-        for i, query in enumerate(query_list):
-            if try_search_and_retweet(config, query):
+        for i, (search_fn, query) in enumerate(query_list):
+            if try_search_and_retweet(config, search_fn, query):
                 successful_query_idx = i
                 break
         if successful_query_idx is None:
-            print("Did {} searches but found nothing to share - sleeping for 600 seconds (10 mins)".format(len(query_list)))
+            print("Did {} searches but found nothing to share - sleeping for 800 seconds (15 mins)".format(len(query_list)))
             time.sleep(600)
         else:
-            print("Found something to share on search {} - sleeping for 800 seconds (15 mins)".format(successful_query_idx))
-            time.sleep(800)
+            print("Found something to share on search {} - sleeping for 1600 seconds (30 mins)".format(successful_query_idx))
+            time.sleep(1600)
 
 
-def main(env):
-    twitter_handle = env["TWITTER_HANDLE"]
+def make_config(env):
     twitter_secret_file = env.get("TWITTER_SECRET_FILE") or "config/secret.json"
     never_share_accounts_file = env.get("TWITTER_NEVER_SHARE_ACCOUNTS_FILE") or "config/never_share_accounts.txt"
     never_share_words_file = env.get("TWITTER_NEVER_SHARE_WORDS_FILE") or "config/never_share_words.txt"
     dryrun = env.get("TWITTER_DRYRUN") == "1"
-    direct_query_file = env.get("TWITTER_DIRECT_QUERY_FILE") or "config/direct.txt"
-    indirect_query_file = env.get("TWITTER_INDIRECT_QUERY_FILE") or "config/indirect.txt"
 
     # insert Twitter Dev App security keys and tokens
     with open(twitter_secret_file) as f:
@@ -113,28 +129,42 @@ def main(env):
     with open(never_share_words_file) as f:
         never_share_words = set(l.strip() for l in f.readlines())
 
-    config = Config(
+    return Config(
         api=authorized_api,
         block_accounts=never_share_accounts,
         block_words=never_share_words,
         dryrun=dryrun,
     )
 
+
+def make_queries(env):
+    twitter_handle = env["TWITTER_HANDLE"]
+    direct_query_file = env.get("TWITTER_DIRECT_QUERY_FILE") or "config/direct.txt"
+    indirect_query_file = env.get("TWITTER_INDIRECT_QUERY_FILE") or "config/indirect.txt"
+    popular_query_file = env.get("TWITTER_POPULAR_QUERY_FILE") or "config/popular.txt"
+
     # set search content
     # we prioritize tweets that have tagged our account directly (search 1)
     with open(direct_query_file) as f:
         direct = ["(" + l.strip() + ")" for l in f.readlines()]
-    query1 = " OR ".join(direct) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+    direct = " OR ".join(direct) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     # if we don't find tweets that included our tag then we search for general
     # hashtags (search 2)
     with open(indirect_query_file) as f:
         indirect = ["(" + l.strip() + ")" for l in f.readlines()]
-    query2 = " OR ".join(indirect) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+    indirect = " OR ".join(indirect) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
-    search_loop(config, [query1, query2])
+    with open(popular_query_file) as f:
+        popular = ["(" + l.strip() + ")" for l in f.readlines()]
+    popular = " OR ".join(popular) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+
+    return Queries(direct=direct, indirect=indirect, popular=popular)
 
 
 if __name__ == "__main__":
+    config = make_config(os.environ)
+    queries = make_queries(os.environ)
+    search_loop(config, queries)
     main(os.environ)
 
