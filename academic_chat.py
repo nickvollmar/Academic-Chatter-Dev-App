@@ -90,9 +90,10 @@ def search_loop(config, queries):
     """
     query_list = [
         (search, queries.direct),
-        (popular_search, queries.popular),
         (search, queries.indirect),
     ]
+    if queries.popular:
+        query_list.insert(1,  (popular_search, queries.popular))
     while True:
         successful_query_idx = None
         for i, (search_fn, query) in enumerate(query_list):
@@ -137,6 +138,14 @@ def make_config(env):
     )
 
 
+def make_query(twitter_handle, filename):
+    with open(filename) as f:
+        lines = ["(" + l.strip() + ")" for l in f.readlines() if l.strip()]
+    if not lines:
+        return None
+    return " OR ".join(lines) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+
+
 def make_queries(env):
     twitter_handle = env["TWITTER_HANDLE"]
     direct_query_file = env.get("TWITTER_DIRECT_QUERY_FILE") or "config/direct.txt"
@@ -145,19 +154,16 @@ def make_queries(env):
 
     # set search content
     # we prioritize tweets that have tagged our account directly (search 1)
+    direct = make_query(twitter_handle, direct_query_file)
     with open(direct_query_file) as f:
-        direct = ["(" + l.strip() + ")" for l in f.readlines()]
+        direct = ["(" + l.strip() + ")" for l in f.readlines() if l.strip()]
     direct = " OR ".join(direct) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
 
     # if we don't find tweets that included our tag then we search for general
     # hashtags (search 2)
-    with open(indirect_query_file) as f:
-        indirect = ["(" + l.strip() + ")" for l in f.readlines()]
-    indirect = " OR ".join(indirect) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+    indirect = make_query(twitter_handle, indirect_query_file)
 
-    with open(popular_query_file) as f:
-        popular = ["(" + l.strip() + ")" for l in f.readlines()]
-    popular = " OR ".join(popular) + " -filter:retweets AND -filter:replies AND -from:" + twitter_handle
+    popular = make_query(twitter_handle, popular_query_file)
 
     return Queries(direct=direct, indirect=indirect, popular=popular)
 
@@ -166,5 +172,4 @@ if __name__ == "__main__":
     config = make_config(os.environ)
     queries = make_queries(os.environ)
     search_loop(config, queries)
-    main(os.environ)
 
